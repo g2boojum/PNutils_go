@@ -45,6 +45,9 @@ func main() {
 	var delt float64
 	var bin int
 	count := 1
+	ferr, _ := os.Create("errors.txt")
+	defer ferr.Close()
+	badcount := 0
 	for {
 		items, err = r.Read()
 		if err == io.EOF {
@@ -55,14 +58,19 @@ func main() {
 		}
 		timetag, _ = strconv.ParseInt(items[2], 10, 64)
 		delt = float64(timetag-tprev) / onesec
-		bin = int(10.0*math.Log10(delt) + 120)
-		if bin > num_bins {
-			fmt.Println("High bin: ", bin, ", delt = ", delt)
+		if delt < 0 {
+			fmt.Fprintf(ferr, "dt < 0: t = %v, dt = %v\n", timetag, delt)
+			fmt.Printf("dt < 0: t = %v, dt = %v\n", timetag, delt)
+			badcount++
+			tprev = timetag
 			continue
 		}
-		if bin < 0 {
-			fmt.Println("Low bin: ", bin, ", delt = ", delt)
-			fmt.Println("\t tprev = ", tprev, ", tcurr = ", timetag)
+		bin = int(10.0*math.Log10(delt) + 120)
+		if bin > num_bins {
+			fmt.Fprintf(ferr, "dt exceeds %v seconds: t = %v, dt = %v, bin = %v\n", maxtime, timetag, delt, bin)
+			fmt.Printf("dt exceeds %v seconds: t = %v, dt = %v, bin = %v\n", maxtime, timetag, delt, bin)
+			badcount++
+			tprev = timetag
 			continue
 		}
 		timebins[bin]++
@@ -75,7 +83,8 @@ func main() {
 	}
 	defer fout.Close()
 	fmt.Fprintf(fout, "logtime,frac\n")
-	fmt.Println("counts = ", count)
+	fmt.Println("Total counts = ", count)
+	fmt.Println("Bad counts = ", badcount)
 	for bin, val := range timebins {
 		logt := float64(bin-120) / 10
 		fmt.Fprintf(fout, "%v,%v\n", logt, float64(val)/float64(count-1))
