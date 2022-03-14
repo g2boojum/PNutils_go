@@ -17,7 +17,7 @@ const num_channels int = 4096
 const tepi int64 = 100000000 // 100 microsec in ps
 const tcap int64 = 150000000 // 150 microsec in ps
 const thresh = 150           // TTL threshold for real PNG pulses
-const sec float64 = 1.0e12             // one second in ps
+const sec float64 = 1.0e12   // one second in ps
 
 func nextPulse(r *csv.Reader) (int64, error) {
 	for {
@@ -28,15 +28,15 @@ func nextPulse(r *csv.Reader) (int64, error) {
 		energy, _ := strconv.Atoi(items[3])
 		if energy > thresh {
 			timetag, _ := strconv.ParseInt(items[2], 10, 64)
-			return timetag, err 
+			return timetag, err
 		}
 	}
 }
 
 func nextGamma(r *csv.Reader, tprev int64, maxdt int64) (int64, int, error) {
 	// Read the next gamma value from the CSV file.
-	// Occasionally there's a glitch, where the time is dramatically wrong. 
-	// In cases I've seen, it's always been about 17 seconds off, but we'll just 
+	// Occasionally there's a glitch, where the time is dramatically wrong.
+	// In cases I've seen, it's always been about 17 seconds off, but we'll just
 	// look for cases where the time difference is more than a TTL pulse width
 	var energy int
 	var timetag int64
@@ -58,7 +58,6 @@ func nextGamma(r *csv.Reader, tprev int64, maxdt int64) (int64, int, error) {
 	}
 	return timetag, energy, nil
 }
-
 
 func main() {
 	var inel, epi, capt, total [num_channels]float64
@@ -139,7 +138,7 @@ func main() {
 			capt[ecurr] += 1
 		}
 		tprev = tcurr
-		tmax = float64(tcurr)/sec
+		tmax = float64(tcurr) / sec
 	}
 	fmt.Println("tmax = ", tmax)
 	fout, err := os.Create(os.Args[3])
@@ -150,7 +149,7 @@ func main() {
 	w := bufio.NewWriter(fout)
 	fmt.Fprintf(w, "channel,epi,inel,cap,total\n")
 	for i, val := range total {
-		fmt.Fprintf(w, "%v,%v,%v,%v,%v\n", 
-		            i, epi[i]/tmax, inel[i]/tmax, capt[i]/tmax, val/tmax)
+		fmt.Fprintf(w, "%v,%v,%v,%v,%v\n",
+			i, epi[i]/tmax, inel[i]/tmax, capt[i]/tmax, val/tmax)
 	}
 }
