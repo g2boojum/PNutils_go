@@ -19,44 +19,105 @@ const tcap int64 = 150000000 // 150 microsec in ps
 const thresh = 150           // TTL threshold for real PNG pulses
 const sec float64 = 1.0e12   // one second in ps
 
-func nextPulse(r *csv.Reader) (int64, error) {
+type ttlbuf struct {
+	tcurr      int64
+	tnext      int64
+	reachedEOF bool
+}
+
+func nextPulse(r *csv.Reader, tb *ttlbuf) {
+	// Read the next ttl value from the CSV file.
+	// Some values are bogus, which we catch because the "energy" is
+	// below the threshold, and we just skip those. Also, occasionally
+	// there's a glitch, where the time is dramatically wrong.
+	// The signature is a time that is _before_ the previous time, but what
+	// that indicates is the previous time was bad. That's why I'm using
+	// a buffer that stores the current and the next ttl data.
+	if tb.reachedEOF {
+		// no more to read, and the buffer has been used
+		return
+	}
 	for {
 		items, err := r.Read()
+		if err == io.EOF {
+			// no more data to read
+			tb.reachedEOF = true
+			tb.tcurr, tb.tnext = tb.tnext, 0
+			return
+		}
 		if err != nil {
-			return 0, err
+			log.Fatal(err)
 		}
 		energy, _ := strconv.Atoi(items[3])
-		if energy > thresh {
-			timetag, _ := strconv.ParseInt(items[2], 10, 64)
-			return timetag, err
+		if energy < thresh {
+			continue
 		}
+		timetag, _ := strconv.ParseInt(items[2], 10, 64)
+		if timetag-tb.tnext < 0 {
+			// the tnext time is bad
+			fmt.Println("Bad ttl time: ", tb.tnext)
+			tb.tnext = timetag
+			continue
+		}
+		tb.tcurr, tb.tnext = tb.tnext, timetag
+		if tb.tcurr == 0 {
+			// buffer not yet full
+			continue
+		}
+		return
 	}
 }
 
-func nextGamma(r *csv.Reader, tprev int64, maxdt int64) (int64, int, error) {
+type gambuf struct {
+	tcurr      int64
+	ecurr      int
+	tnext      int64
+	enext      int
+	reachedEOF bool
+}
+
+func nextGamma(r *csv.Reader, gb *gambuf) error {
 	// Read the next gamma value from the CSV file.
 	// Occasionally there's a glitch, where the time is dramatically wrong.
-	// In cases I've seen, it's always been about 17 seconds off, but we'll just
-	// look for cases where the time difference is more than a TTL pulse width
+	// The signature is a time that is _before_ the previous time, but what
+	// that indicates is the previous time was bad. That's why I'm using
+	// a buffer that stores the current and next gamma data.
+	if gb.reachedEOF {
+		// no more to read, and the buffer has been used
+		return io.EOF
+	}
 	var energy int
 	var timetag int64
 	for {
 		items, err := r.Read()
+		if err == io.EOF {
+			// no more data to read
+			gb.reachedEOF = true
+			// I'm assuming there was at least enough data to fill the buffer,
+			// so one value left
+			gb.tcurr, gb.ecurr = gb.tnext, gb.enext
+			gb.tnext, gb.enext = 0, 0
+			return nil
+		}
 		if err != nil {
-			return 0, 0, err
+			log.Fatal(err)
 		}
 		timetag, _ = strconv.ParseInt(items[2], 10, 64)
-		dt := timetag - tprev
-		if dt < 0 {
-			dt *= -1
+		energy, _ = strconv.Atoi(items[3])
+		if timetag-gb.tnext < 0 {
+			// the data corresponding to tnext is bad
+			fmt.Println("Bad gamma time: ", gb.tnext)
+			gb.tnext, gb.enext = timetag, energy
+			continue
 		}
-		if dt < maxdt {
-			energy, _ = strconv.Atoi(items[3])
-			break
+		gb.tcurr, gb.ecurr = gb.tnext, gb.enext
+		gb.tnext, gb.enext = timetag, energy
+		if gb.tcurr == 0 {
+			// buffer not yet full
+			continue
 		}
-		fmt.Println("Bad time: ", timetag)
+		return nil
 	}
-	return timetag, energy, nil
 }
 
 func main() {
@@ -78,17 +139,8 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	// Start w/ a "current" TTL pulse time and the time of the subsequent pulse
-	currttl, err := nextPulse(rp)
-	if err != nil {
-		log.Fatal(err)
-	}
-	nextttl, err := nextPulse(rp)
-	if err != nil {
-		log.Fatal(err)
-	}
-	maxdt := nextttl - currttl
-	lastpulse := false
+	tb := &ttlbuf{}
+	nextPulse(rp, tb) // populate the ttl buffer
 	// gamma initialization
 	gammafp, err := os.Open(os.Args[2])
 	if err != nil {
@@ -102,43 +154,40 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	items, _ := rg.Read()
-	tprev, _ := strconv.ParseInt(items[2], 10, 64)
-	eprev, _ := strconv.Atoi(items[3])
-	total[eprev] += 1
+	gb := &gambuf{}
 	tmax := 0.0
-	var tcurr int64
-	var ecurr int
 	for {
-		tcurr, ecurr, err = nextGamma(rg, tprev, maxdt)
+		err = nextGamma(rg, gb)
 		if err == io.EOF {
+			// done w/ gamma data
 			break
 		}
 		if err != nil {
 			log.Fatal(err)
 		}
-		total[ecurr] += 1
-		if tcurr < currttl {
-			continue // PNG hasn't pulsed yet
+		if gb.tcurr < tb.tcurr {
+			// before the first pulse, so reject
+			continue
 		}
-		if (!lastpulse) && (tcurr >= nextttl) {
-			currttl = nextttl
-			nextttl, err = nextPulse(rp)
-			if err == io.EOF {
-				lastpulse = true
-				fmt.Println("Done with pulses. Last pulse at ", currttl)
+		if (!tb.reachedEOF) && (gb.tcurr >= tb.tnext) {
+			// need to advance the TTL pulse buffer
+			for {
+				nextPulse(rp, tb)
+				if tb.reachedEOF || (gb.tcurr < tb.tnext) {
+					break
+				}
 			}
 		}
-		dt := tcurr - currttl
+		dt := gb.tcurr - tb.tcurr
 		if dt < tepi {
-			inel[ecurr] += 1
+			inel[gb.ecurr] += 1
 		} else if dt < tcap {
-			epi[ecurr] += 1
+			epi[gb.ecurr] += 1
 		} else {
-			capt[ecurr] += 1
+			capt[gb.ecurr] += 1
 		}
-		tprev = tcurr
-		tmax = float64(tcurr) / sec
+		total[gb.ecurr] += 1
+		tmax = float64(gb.tcurr) / sec
 	}
 	fmt.Println("tmax = ", tmax)
 	fout, err := os.Create(os.Args[3])
