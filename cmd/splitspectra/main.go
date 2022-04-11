@@ -4,7 +4,6 @@
 package main
 
 import (
-	"bufio"
 	"encoding/csv"
 	"fmt"
 	"io"
@@ -55,7 +54,7 @@ func nextPulse(r *csv.Reader, tb *ttlbuf) {
 		timetag, _ := strconv.ParseInt(items[2], 10, 64)
 		if timetag-tb.tnext < 0 {
 			// the tnext time is bad
-			fmt.Println("Bad ttl time: ", tb.tnext)
+			log.Println("Bad ttl time: ", tb.tnext)
 			tb.tnext = timetag
 			continue
 		}
@@ -106,7 +105,7 @@ func nextGamma(r *csv.Reader, gb *gambuf) error {
 		energy, _ = strconv.Atoi(items[3])
 		if timetag-gb.tnext < 0 {
 			// the data corresponding to tnext is bad
-			fmt.Println("Bad gamma time: ", gb.tnext)
+			log.Println("Bad gamma time: ", gb.tnext)
 			gb.tnext, gb.enext = timetag, energy
 			continue
 		}
@@ -195,10 +194,9 @@ func main() {
 		log.Fatal(err)
 	}
 	defer fout.Close()
-	w := bufio.NewWriter(fout)
-	fmt.Fprintf(w, "channel,epi,inel,cap,total\n")
+	fmt.Fprintf(fout, "channel,epi,inel,cap,total\n")
 	for i, val := range total {
-		fmt.Fprintf(w, "%v,%v,%v,%v,%v\n",
+		fmt.Fprintf(fout, "%v,%v,%v,%v,%v\n",
 			i, epi[i]/tmax, inel[i]/tmax, capt[i]/tmax, val/tmax)
 	}
 }

@@ -4,7 +4,6 @@
 package main
 
 import (
-	"bufio"
 	"encoding/csv"
 	"fmt"
 	"io"
@@ -56,9 +55,8 @@ func main() {
 		log.Fatal(err)
 	}
 	defer fout.Close()
-	w := bufio.NewWriter(fout)
-	fmt.Fprintf(w, "channel,total\n")
+	fmt.Fprintf(fout, "channel,total\n")
 	for i, val := range total {
-		fmt.Fprintf(w, "%v,%v\n", i, float64(val)/tmax_s)
+		fmt.Fprintf(fout, "%v,%v\n", i, float64(val)/tmax_s)
 	}
 }
