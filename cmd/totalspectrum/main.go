@@ -13,6 +13,18 @@ import (
 )
 
 const num_channels int = 4096
+const num_out_channels int = 256
+const dnsmpl_size int = num_channels / num_out_channels
+
+func downsample(counts *[num_channels]uint64, newcounts *[num_out_channels]uint64) {
+	for i := 0; i < num_out_channels; i++ {
+		var sum uint64 = 0
+		for j := i * dnsmpl_size; j < (i+1)*dnsmpl_size; j++ {
+			sum += counts[j]
+		}
+		newcounts[i] = sum
+	}
+}
 
 func main() {
 	if len(os.Args) != 3 {
@@ -50,13 +62,15 @@ func main() {
 	}
 	tmax_s := float64(tmax) / 1e12
 	fmt.Println("tmax = ", tmax_s)
+	var totalds [num_out_channels]uint64
+	downsample(&total, &totalds)
 	fout, err := os.Create(os.Args[2])
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer fout.Close()
 	fmt.Fprintf(fout, "channel,total\n")
-	for i, val := range total {
+	for i, val := range totalds {
 		fmt.Fprintf(fout, "%v,%v\n", i, float64(val)/tmax_s)
 	}
 }
