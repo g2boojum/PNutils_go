@@ -13,6 +13,8 @@ import (
 )
 
 const num_channels int = 4096
+const num_out_channels int = 256 // downsampled channels
+const dnsmpl_size int = num_channels / num_out_channels
 const tepi int64 = 100000000 // 100 microsec in ps
 const tcap int64 = 150000000 // 150 microsec in ps
 const thresh = 150           // TTL threshold for real PNG pulses
@@ -119,6 +121,16 @@ func nextGamma(r *csv.Reader, gb *gambuf) error {
 	}
 }
 
+func downsample(counts *[num_channels]float64, newcounts *[num_out_channels]float64) {
+	for i := 0; i < num_out_channels; i++ {
+		var sum float64 = 0
+		for j := i * dnsmpl_size; j < (i+1)*dnsmpl_size; j++ {
+			sum += counts[j]
+		}
+		newcounts[i] = sum
+	}
+}
+
 func main() {
 	var inel, epi, capt, total [num_channels]float64
 	if len(os.Args) != 4 {
@@ -194,9 +206,14 @@ func main() {
 		log.Fatal(err)
 	}
 	defer fout.Close()
+	var epids, inelds, captds, totalds [num_out_channels]float64
+	downsample(&total, &totalds)
+	downsample(&epi, &epids)
+	downsample(&inel, &inelds)
+	downsample(&capt, &captds)
 	fmt.Fprintf(fout, "channel,epi,inel,cap,total\n")
-	for i, val := range total {
+	for i, val := range totalds {
 		fmt.Fprintf(fout, "%v,%v,%v,%v,%v\n",
-			i, epi[i]/tmax, inel[i]/tmax, capt[i]/tmax, val/tmax)
+			i, epids[i]/tmax, inelds[i]/tmax, captds[i]/tmax, val/tmax)
 	}
 }
