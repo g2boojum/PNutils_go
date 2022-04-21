@@ -12,12 +12,14 @@ import (
 )
 
 func main() {
-	if len(os.Args) != 4 {
-		fmt.Printf("Usage: %s infile outfile time_in_s\n", os.Args[0])
+	if len(os.Args) != 5 {
+		fmt.Printf("Usage: %s infile outfile start_time_in_s end_time_in_s\n", os.Args[0])
 		os.Exit(1)
 	}
-	var tcut int64
-	tcut, _ = strconv.ParseInt(os.Args[3], 10, 64)
+	var tstart, tcut int64
+	tstart, _ = strconv.ParseInt(os.Args[3], 10, 64)
+	tstartns := tstart * 1e12
+	tcut, _ = strconv.ParseInt(os.Args[4], 10, 64)
 	tcutns := tcut * 1e12
 	fin, err := os.Open(os.Args[1])
 	if err != nil {
@@ -49,6 +51,9 @@ func main() {
 			log.Fatal(err)
 		}
 		timetag, _ = strconv.ParseInt(items[2], 10, 64)
+		if timetag < tstartns {
+			continue
+		}
 		if timetag > tcutns {
 			break
 		}
