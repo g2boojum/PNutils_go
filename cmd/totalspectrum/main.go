@@ -41,7 +41,7 @@ func main() {
 	r.ReuseRecord = true
 	isHeader := true
 	var total [num_channels]uint64
-	var tmax, timetag int64
+	var tmax, timetag, firsttime int64
 	var energy int
 	for {
 		items, rerr := r.Read()
@@ -57,9 +57,14 @@ func main() {
 		}
 		energy, _ = strconv.Atoi(items[3])
 		timetag, _ = strconv.ParseInt(items[2], 10, 64)
+		if firsttime == 0 {
+			firsttime = timetag
+		}
 		total[energy] += 1
 		tmax = timetag
 	}
+	firsttime_s := float64(firsttime) / 1e12
+	fmt.Println("firsttime = ", firsttime_s)
 	tmax_s := float64(tmax) / 1e12
 	fmt.Println("tmax = ", tmax_s)
 	var totalds [num_out_channels]uint64
@@ -71,6 +76,6 @@ func main() {
 	defer fout.Close()
 	fmt.Fprintf(fout, "channel,total\n")
 	for i, val := range totalds {
-		fmt.Fprintf(fout, "%v,%v\n", i, float64(val)/tmax_s)
+		fmt.Fprintf(fout, "%v,%v\n", i, float64(val)/(tmax_s-firsttime_s))
 	}
 }
